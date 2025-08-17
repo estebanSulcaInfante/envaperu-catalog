@@ -6,6 +6,10 @@ class BaseConfig:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_SORT_KEYS = False
 
+    SUPABASE_URL = os.getenv("SUPABASE_URL", "")
+    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY", "")
+    SUPABASE_BUCKET = os.getenv("SUPABASE_BUCKET", "product-images")
+
     # Auth
     JWT_SECRET = os.getenv("JWT_SECRET", "change-me-too")
     JWT_ALG = "HS256"

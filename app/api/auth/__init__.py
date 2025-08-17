@@ -1,14 +1,13 @@
 # app/api/auth/__init__.py
 from flask import Blueprint, request, jsonify, abort
 from sqlalchemy import func
-from ...models import db, Usuario, RefreshToken, Rol  # usa tus modelos
+from ...models import db, Usuario, RefreshToken  # usa tus modelos
 from ...security import (
     hash_pwd, verify_pwd,
     make_access_token, new_refresh_token, hash_refresh_token,
     is_refresh_expired, now_utc
 )
 from ...decorators import require_auth
-import pyotp
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -54,11 +53,6 @@ def register():
     db.session.add(u)
     db.session.commit()
 
-    # (opcional) asignar rol ADMIN si tienes roles precargados
-    # admin = db.session.scalar(db.select(Rol).where(Rol.nombre == "ADMIN"))
-    # if admin:
-    #     u.roles.append(admin); db.session.commit()
-
     return jsonify({"id": u.id, "email": u.email}), 201
 
 # ---------- login ----------
@@ -67,7 +61,6 @@ def login():
     data = request.get_json() or {}
     email = normalize_email(data.get("email"))
     password = data.get("password")
-    totp_code = (data.get("totp") or "").replace(" ", "")
 
     if not email or not password:
         abort(400, description="email y password son requeridos")
@@ -77,14 +70,6 @@ def login():
     )
     if not u or u.estado != "ACTIVO" or not verify_pwd(password, u.pass_hash):
         abort(401, description="credenciales inválidas")
-
-    # Si el usuario tiene MFA, requiere TOTP válido
-    if u.mfa_totp_secret:
-        if not totp_code:
-            return jsonify({"mfa_required": True}), 401
-        totp = pyotp.TOTP(u.mfa_totp_secret)
-        if not totp.verify(totp_code, valid_window=1):
-            abort(401, description="código MFA inválido")
 
     roles = user_roles(u)
 
@@ -122,12 +107,10 @@ def refresh():
         abort(401, description="refresh inválido")
 
     if is_refresh_expired(rt.created_at):
-        # revoca por expiración
         rt.revoked_at = now_utc()
         db.session.commit()
         abort(401, description="refresh expirado")
 
-    # Carga usuario
     u: Usuario | None = db.session.get(Usuario, rt.usuario_id)
     if not u or u.estado != "ACTIVO":
         abort(401, description="usuario inactivo")
@@ -168,52 +151,3 @@ def logout():
 def whoami():
     p = getattr(request, "user", {})
     return jsonify(p), 200
-
-# ---------- MFA: setup/enable/disable ----------
-@auth_bp.post("/mfa/setup")
-@require_auth
-def mfa_setup():
-    """Genera un secreto TOTP y URI para QR (el cliente muestra el QR).
-       Por simplicidad, el secreto se devuelve al cliente; en producción,
-       podrías almacenarlo temporalmente del lado servidor.
-    """
-    data = request.get_json() or {}
-    issuer = data.get("issuer") or "MiEmpresa"
-    user_email = request.user.get("email")
-    secret = pyotp.random_base32()
-    uri = pyotp.totp.TOTP(secret).provisioning_uri(name=user_email, issuer_name=issuer)
-    return jsonify({"secret": secret, "otpauth_uri": uri}), 200
-
-@auth_bp.post("/mfa/enable")
-@require_auth
-def mfa_enable():
-    """Activa MFA guardando el secreto si el código es válido."""
-    data = request.get_json() or {}
-    secret = data.get("secret")
-    code = (data.get("code") or "").replace(" ", "")
-    if not secret or not code:
-        abort(400, description="secret y code requeridos")
-
-    totp = pyotp.TOTP(secret)
-    if not totp.verify(code, valid_window=1):
-        abort(401, description="código inválido")
-
-    uid = int(request.user["sub"])
-    u: Usuario | None = db.session.get(Usuario, uid)
-    if not u or u.estado != "ACTIVO":
-        abort(401)
-    u.mfa_totp_secret = secret
-    db.session.commit()
-    return jsonify({"mfa_enabled": True}), 200
-
-@auth_bp.post("/mfa/disable")
-@require_auth
-def mfa_disable():
-    """Desactiva MFA. Opcionalmente podrías pedir el código actual."""
-    uid = int(request.user["sub"])
-    u: Usuario | None = db.session.get(Usuario, uid)
-    if not u:
-        abort(401)
-    u.mfa_totp_secret = None
-    db.session.commit()
-    return jsonify({"mfa_enabled": False}), 200

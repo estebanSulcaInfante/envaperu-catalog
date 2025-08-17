@@ -121,10 +121,13 @@ class CatalogoSesion(db.Model):
     )
 
     catalogo  = relationship("Catalogo", back_populates="sesiones")
-    versiones = relationship("CatalogoSesionVersion",
-                             back_populates="sesion",
-                             cascade="all, delete-orphan",
-                             order_by="CatalogoSesionVersion.version_num")
+    versiones = relationship(
+        "CatalogoSesionVersion",
+        back_populates="sesion",
+        cascade="all, delete-orphan",
+        order_by="CatalogoSesionVersion.version_num",
+        foreign_keys="CatalogoSesionVersion.sesion_id",
+    )
 
 
 # -------------------------
@@ -138,6 +141,13 @@ class CatalogoSesionVersion(db.Model):
     sesion_id   = db.Column(db.BigInteger, db.ForeignKey("catalogo_sesion.id", ondelete="CASCADE"), nullable=False)
     catalogo_id = db.Column(db.BigInteger, db.ForeignKey("catalogo.id", ondelete="CASCADE"),         nullable=False)
     producto_id = db.Column(db.BigInteger, db.ForeignKey("producto.id", ondelete="RESTRICT"),         nullable=False)
+
+    # Relación inversa hacia CatalogoSesion
+    sesion = relationship(
+        "CatalogoSesion",
+        back_populates="versiones",
+        foreign_keys=[sesion_id],
+    )
 
     version_num = db.Column(db.Integer, nullable=False)
 
@@ -164,6 +174,7 @@ class CatalogoSesionVersion(db.Model):
 
     __table_args__ = (
         UniqueConstraint("sesion_id", "version_num", name="uq_version_por_sesion"),
+        UniqueConstraint("id", "catalogo_id", name="uq_version_id_catalogo"),
         CheckConstraint("um in ('DOC','UNID','CIENTO')", name="chk_version_um"),
         CheckConstraint("precio_exw >= 0",               name="chk_version_precio"),
         CheckConstraint("estado in ('BORRADOR','ENVIADA','CONTRAOFERTA','APROBADA','RECHAZADA','EXPIRADA')",
@@ -281,7 +292,7 @@ class Usuario(db.Model):
     nombre = db.Column(db.Text, nullable=False)
     cargo = db.Column(db.Text)
     estado = db.Column(db.String, nullable=False, default="ACTIVO")
-    mfa_totp_secret = db.Column(db.Text)
+    #mfa_totp_secret = db.Column(db.Text)
     last_login_at = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), server_default=sa.func.now())
     roles = db.relationship("Rol", secondary="usuario_rol", back_populates="usuarios")
