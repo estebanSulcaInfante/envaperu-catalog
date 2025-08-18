@@ -167,15 +167,17 @@ def subir_imagen(producto_id: int):
     if not f:
         abort(400, description="file requerido (multipart/form-data)")
 
-    # Si aún no hay imagen_key, la generamos a partir del filename
+    # Debe existir imagen_key previamente generado vía PATCH /imagen
     if not p.imagen_key:
-        filename = (f.filename or "imagen.jpg").lower()
-        m = re.search(r"\.(png|jpg|jpeg|webp|gif)$", filename)
-        ext = "." + m.group(1) if m else ".jpg"
-        slug = slugify(p.nombre or f"producto-{p.id}")
-        rand = secrets.token_hex(4)
-        p.imagen_key = f"productos/{p.id:06d}/{slug}-{rand}{ext}"
-        db.session.commit()
+        abort(400, description="imagen_key no establecido: utiliza PATCH /imagen primero")
+
+    # Validaciones de tipo y tamaño
+    ALLOWED_MIME = {"image/png","image/jpeg","image/webp","image/gif"}
+    if f.mimetype not in ALLOWED_MIME:
+        abort(400, description="tipo de archivo no permitido")
+    max_bytes = 5 * 1024 * 1024  # 5 MB
+    if request.content_length and request.content_length > max_bytes:
+        abort(400, description="archivo excede 5 MB")
 
     bucket = current_app.config["SUPABASE_BUCKET"]
     supa_url = current_app.config["SUPABASE_URL"].rstrip("/")
@@ -212,8 +214,13 @@ def url_imagen(producto_id: int):
     supa_url = current_app.config["SUPABASE_URL"].rstrip("/")
     service_key = current_app.config["SUPABASE_SERVICE_ROLE_KEY"]
 
-    # Tiempo en segundos (p.ej. 3600 = 1 hora)
-    expires_in = int(request.args.get("expires_in", 3600))
+    # Tiempo en segundos (máx 24h = 86400)
+    try:
+        expires_in = int(request.args.get("expires_in", 3600))
+    except ValueError:
+        abort(400, description="expires_in inválido")
+    if expires_in < 60 or expires_in > 86400:
+        abort(400, description="expires_in debe estar entre 60 y 86400 segundos")
 
     url = f"{supa_url}/storage/v1/object/sign/{bucket}/{p.imagen_key}"
     r = requests.post(

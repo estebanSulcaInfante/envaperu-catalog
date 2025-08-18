@@ -14,7 +14,7 @@ db = SQLAlchemy()
 class Cliente(db.Model):
     __tablename__ = "cliente"
 
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
 
     tipo_doc = db.Column(db.String(20), nullable=False)  # DNI | RUC | CE | PASAPORTE | OTRO
     num_doc  = db.Column(db.String(80), nullable=False)  # número de doc identidad
@@ -45,12 +45,14 @@ class Cliente(db.Model):
 # -------------------------
 class Producto(db.Model):
     __tablename__ = "producto"
-    id = db.Column(db.BigInteger, primary_key=True)
+
+    # Opción B: id autogenerado pero puedes asignarlo manual (SKU) cuando lo necesites.
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
 
     nombre           = db.Column(db.Text, nullable=False)
     um               = db.Column(db.String(10), nullable=False)  # 'DOC'|'UNID'|'CIENTO'
-    doc_x_bulto_caja = db.Column(NUMERIC(10, 2), nullable=False)     # antes: Numeric genérico
-    doc_x_paq        = db.Column(NUMERIC(10, 2), nullable=False)     # antes: Numeric genérico
+    doc_x_bulto_caja = db.Column(NUMERIC(10, 2), nullable=False)
+    doc_x_paq        = db.Column(NUMERIC(10, 2), nullable=False)
     precio_exw       = db.Column(NUMERIC(12, 4), nullable=False)
     familia          = db.Column(db.Text, nullable=False)
     imagen_key       = db.Column(db.Text)
@@ -61,7 +63,7 @@ class Producto(db.Model):
         CheckConstraint("precio_exw >= 0",               name="chk_producto_precio"),
         sa.Index("idx_producto_nombre", nombre),
     )
-    
+
     catalogos = relationship("Catalogo", back_populates="producto")
 
 
@@ -70,12 +72,13 @@ class Producto(db.Model):
 # -------------------------
 class Catalogo(db.Model):
     __tablename__ = "catalogo"
-    id = db.Column(db.BigInteger, primary_key=True)
 
-    cliente_id  = db.Column(db.BigInteger, db.ForeignKey("cliente.id", ondelete="RESTRICT"), nullable=False)
-    producto_id = db.Column(db.BigInteger, db.ForeignKey("producto.id", ondelete="RESTRICT"), nullable=False)
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
 
-    final_version_id = db.Column(db.BigInteger)  # quitamos FK simple
+    cliente_id  = db.Column(sa.BigInteger, db.ForeignKey("cliente.id", ondelete="RESTRICT"), nullable=False)
+    producto_id = db.Column(sa.BigInteger, db.ForeignKey("producto.id", ondelete="RESTRICT"), nullable=False)
+
+    final_version_id = db.Column(sa.BigInteger)  # FK compuesta con id para asegurar pertenencia
 
     estado     = db.Column(db.String(20), nullable=False, default="EN_PROCESO")
     created_at = db.Column(db.DateTime(timezone=True), server_default=sa.func.now())
@@ -107,11 +110,11 @@ class Catalogo(db.Model):
 class CatalogoSesion(db.Model):
     __tablename__ = "catalogo_sesion"
 
-    id = db.Column(db.BigInteger, primary_key=True)
-    catalogo_id = db.Column(db.BigInteger, db.ForeignKey("catalogo.id", ondelete="CASCADE"), nullable=False)
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
+    catalogo_id = db.Column(sa.BigInteger, db.ForeignKey("catalogo.id", ondelete="CASCADE"), nullable=False)
 
-    etiqueta  = db.Column(db.Text)
-    is_active = db.Column(db.Boolean, nullable=False, default=True)
+    etiqueta   = db.Column(db.Text)
+    is_active  = db.Column(db.Boolean, nullable=False, default=True)
     created_at = db.Column(db.DateTime(timezone=True), server_default=sa.func.now())
 
     __table_args__ = (
@@ -136,11 +139,11 @@ class CatalogoSesion(db.Model):
 class CatalogoSesionVersion(db.Model):
     __tablename__ = "catalogo_sesion_version"
 
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
 
-    sesion_id   = db.Column(db.BigInteger, db.ForeignKey("catalogo_sesion.id", ondelete="CASCADE"), nullable=False)
-    catalogo_id = db.Column(db.BigInteger, db.ForeignKey("catalogo.id", ondelete="CASCADE"),         nullable=False)
-    producto_id = db.Column(db.BigInteger, db.ForeignKey("producto.id", ondelete="RESTRICT"),         nullable=False)
+    sesion_id   = db.Column(sa.BigInteger, db.ForeignKey("catalogo_sesion.id", ondelete="CASCADE"), nullable=False)
+    catalogo_id = db.Column(sa.BigInteger, db.ForeignKey("catalogo.id", ondelete="CASCADE"),         nullable=False)
+    producto_id = db.Column(sa.BigInteger, db.ForeignKey("producto.id", ondelete="RESTRICT"),         nullable=False)
 
     # Relación inversa hacia CatalogoSesion
     sesion = relationship(
@@ -283,16 +286,19 @@ class CatalogoSesionVersion(db.Model):
           )) / 1000.0) + 1.5 * sa.func.coalesce(cant_bultos, 0)
     )
 
-# models_auth.py
+
+# -------------------------
+# AUTH MODELOS
+# -------------------------
 class Usuario(db.Model):
     __tablename__ = "usuario"
-    id = db.Column(db.BigInteger, primary_key=True)
-    email = db.Column(db.String, nullable=False)  # quitamos unique del Column...
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
+    email = db.Column(db.String, nullable=False)  # único case-insensitive por índice
     pass_hash = db.Column(db.Text, nullable=False)
     nombre = db.Column(db.Text, nullable=False)
     cargo = db.Column(db.Text)
     estado = db.Column(db.String, nullable=False, default="ACTIVO")
-    #mfa_totp_secret = db.Column(db.Text)
+    # mfa_totp_secret = db.Column(db.Text)
     last_login_at = db.Column(db.DateTime(timezone=True))
     created_at = db.Column(db.DateTime(timezone=True), server_default=sa.func.now())
     roles = db.relationship("Rol", secondary="usuario_rol", back_populates="usuarios")
@@ -303,34 +309,39 @@ class Usuario(db.Model):
         sa.Index("uq_usuario_email_lower", sa.func.lower(email), unique=True),
     )
 
+
 class Rol(db.Model):
     __tablename__ = "rol"
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
     nombre = db.Column(db.String, unique=True, nullable=False)
     permisos = db.relationship("Permiso", secondary="rol_permiso", back_populates="roles")
     usuarios = db.relationship("Usuario", secondary="usuario_rol", back_populates="roles")
 
+
 class Permiso(db.Model):
     __tablename__ = "permiso"
-    id = db.Column(db.BigInteger, primary_key=True)
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
     clave = db.Column(db.String, unique=True, nullable=False)
     descripcion = db.Column(db.Text)
     roles = db.relationship("Rol", secondary="rol_permiso", back_populates="permisos")
 
+
 class UsuarioRol(db.Model):
     __tablename__ = "usuario_rol"
-    usuario_id = db.Column(db.BigInteger, db.ForeignKey("usuario.id"), primary_key=True)
-    rol_id = db.Column(db.BigInteger, db.ForeignKey("rol.id"), primary_key=True)
+    usuario_id = db.Column(sa.BigInteger, db.ForeignKey("usuario.id"), primary_key=True)
+    rol_id = db.Column(sa.BigInteger, db.ForeignKey("rol.id"), primary_key=True)
+
 
 class RolPermiso(db.Model):
     __tablename__ = "rol_permiso"
-    rol_id = db.Column(db.BigInteger, db.ForeignKey("rol.id"), primary_key=True)
-    permiso_id = db.Column(db.BigInteger, db.ForeignKey("permiso.id"), primary_key=True)
+    rol_id = db.Column(sa.BigInteger, db.ForeignKey("rol.id"), primary_key=True)
+    permiso_id = db.Column(sa.BigInteger, db.ForeignKey("permiso.id"), primary_key=True)
+
 
 class RefreshToken(db.Model):
     __tablename__ = "refresh_token"
-    id = db.Column(db.BigInteger, primary_key=True)
-    usuario_id = db.Column(db.BigInteger, db.ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
+    id = db.Column(sa.BigInteger, sa.Identity(), primary_key=True)
+    usuario_id = db.Column(sa.BigInteger, db.ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False)
     token_hash = db.Column(db.Text, nullable=False)
     user_agent = db.Column(db.Text)
     ip = db.Column(db.Text)

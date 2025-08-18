@@ -1,8 +1,9 @@
+# app/config.py
 import os
 
 class BaseConfig:
     SECRET_KEY = os.getenv("SECRET_KEY", "change-me")
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "postgresql+psycopg2://postgres:postgres@localhost:5432/miapp")
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", "postgresql+psycopg://postgres:1234@localhost:5432/miapp")
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     JSON_SORT_KEYS = False
 
@@ -24,10 +25,8 @@ class ProdConfig(BaseConfig):
 
 class TestConfig(BaseConfig):
     TESTING = True
-    SQLALCHEMY_DATABASE_URI = os.getenv(
-        "TEST_DATABASE_URL",
-        "postgresql+psycopg2://postgres:postgres@localhost:5432/miapp_test",
-    )
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL_TEST", "sqlite:///test.db")
+
 
 def get_config(env_name: str | None):
     env = env_name or os.getenv("FLASK_ENV") or os.getenv("APP_ENV") or "development"
