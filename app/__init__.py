@@ -34,4 +34,14 @@ def create_app(env_name: str | None = None, config_overrides: dict | None = None
         # En testing, Flask maneja tracebacks, no te preocupes
         return {"error": "server error"}, 500
 
+
+    # --- CLI para crear tablas SIN Alembic ---
+    @app.cli.command("init-db")
+    def init_db_command():
+        """Crea todas las tablas definidas en los modelos."""
+        from .models import db  # import local para evitar ciclos
+        with app.app_context():
+            db.create_all()
+        print("✔ Tablas creadas")
+        
     return app
