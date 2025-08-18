@@ -7,11 +7,16 @@ def create_api_bp():
     from .catalogo import catalogo_bp
     from .clientes import clientes_bp      
     from .productos import productos_bp    
+    from .sesiones import sesiones_bp
+    from .versiones import versiones_bp
     
     api_bp.register_blueprint(auth_bp)
     api_bp.register_blueprint(catalogo_bp)
-    api_bp.register_blueprint(clientes_bp)     # <-- NUEVO
-    api_bp.register_blueprint(productos_bp)    # <-- NUEVO
+    api_bp.register_blueprint(clientes_bp)     
+    api_bp.register_blueprint(productos_bp)    
+    api_bp.register_blueprint(sesiones_bp)
+    api_bp.register_blueprint(versiones_bp)
+    
     return api_bp
 
 def register_blueprints(app):
