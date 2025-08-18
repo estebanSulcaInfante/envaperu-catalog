@@ -48,6 +48,7 @@ curl -X POST {{base}}/api/auth/refresh \
      -H "Content-Type: application/json" \
      -d '{"refresh_token":"4b8e..."}'
 # 200 -> nuevo access y refresh
+El `access_token` sigue siendo válido hasta su expiración (por eso `/whoami` puede seguir funcionando inmediatamente después del logout).
 ```
 
 ### 1.4 Logout
@@ -56,6 +57,8 @@ curl -X POST {{base}}/api/auth/logout \
      -H "Content-Type: application/json" \
      -d '{"refresh_token":"4b8e..."}'
 # 200 {"ok":true}
+Logout revoca solo el `refresh_token` provisto (cierre de sesión de esa sesión). 
+
 ```
 
 ### 1.5 Whoami (test del token)
@@ -129,6 +132,8 @@ curl -X PATCH {{base}}/api/productos/1/imagen \
      -H "Content-Type: application/json" \
      -d '{"filename":"foto.png"}'
 # -> {"ok":true,"imagen_key":"productos/000001/lapicero-xxxx.png"}
+Al generar `imagen_key` se define la ruta/filename determinístico (slug + extensión).
+
 ```
 
 2) **Subir archivo**  
@@ -136,6 +141,7 @@ curl -X PATCH {{base}}/api/productos/1/imagen \
 curl -X POST {{base}}/api/productos/1/imagen/upload \
      -H "Authorization: Bearer {{token}}" \
      -F "file=@./foto.png"
+El endpoint `/imagen/upload` sube el archivo al bucket privado `SUPABASE_BUCKET`
 ```
 
 3) **Obtener URL firmada**  
@@ -143,6 +149,7 @@ curl -X POST {{base}}/api/productos/1/imagen/upload \
 curl -X GET "{{base}}/api/productos/1/imagen/url?expires_in=3600" \
      -H "Authorization: Bearer {{token}}"
 # -> {"url":"https://...","expires_in":3600}
+usando `SUPABASE_SERVICE_ROLE_KEY`. El endpoint `/imagen/url` devuelve una URL firmada temporal.
 ```
 
 ---
@@ -359,21 +366,45 @@ curl -X POST {{base}}/api/versiones/42/current \
 ---
 ## 7. Variables de entorno útiles
 
-| Variable | Ejemplo | Descripción |
-|----------|---------|-------------|
-| `DATABASE_URL` | `postgresql+psycopg2://user:pass@host/db` | Conexión producción |
-| `TEST_DATABASE_URL` | `sqlite:///:memory:` | Sobre-escribe BD en tests |
-| `SECRET_KEY` | `changeme` | Sesión Flask |
-| `JWT_SECRET` | `changeme-too` | Firma de JWT |
+| Variable                 | Ejemplo                                                    | Descripción                                   |
+|--------------------------|------------------------------------------------------------|-----------------------------------------------|
+| DATABASE_URL             | postgresql+psycopg://postgres:1234@localhost:5432/miapp   | Conexión a la BD principal                    |
+| DATABASE_URL_TEST        | postgresql+psycopg://postgres:1234@localhost:5432/miapp_test | Conexión a la BD de tests (si no, usa SQLite) |
+| SECRET_KEY               | changeme                                                   | Llave de sesión Flask                         |
+| JWT_SECRET               | changeme-too                                               | Firma de JWT                                  |
+| SUPABASE_URL             | https://xxx.supabase.co                                   | URL del proyecto Supabase                     |
+| SUPABASE_SERVICE_ROLE_KEY| eyJhbGciOiJI...                                           | Service Role Key para subir/firmar            |
+| SUPABASE_BUCKET          | product-images                                            | Bucket privado para imágenes de productos     |
+
+> Nota: instala `python-dotenv` si quieres que Flask cargue automáticamente tu `.env`.
 
 ---
 ## 8. Arranque rápido en dev
-```bash
+
 python -m venv venv
-pip install -r requirements.txt
+venv\Scripts\pip install -r requirements.txt
+
+# Crear base de datos si no existe (Postgres)
+# Linux/Mac:
+createdb miapp || true
+# Windows (psql):
+psql -U postgres -h localhost -c "CREATE DATABASE miapp;" || REM ya existe
+
+# Variables de entorno (ejemplos)
+# Linux/Mac (bash/zsh):
 export FLASK_APP=wsgi.py
+export DATABASE_URL=postgresql+psycopg://postgres:1234@localhost:5432/miapp
+
+# Windows PowerShell:
+$env:FLASK_APP="wsgi.py"
+$env:DATABASE_URL="postgresql+psycopg://postgres:1234@localhost:5432/miapp"
+
+# Windows CMD:
+set FLASK_APP=wsgi.py
+set DATABASE_URL=postgresql+psycopg://postgres:1234@localhost:5432/miapp
+
 flask run  # http://127.0.0.1:5000
-```
+
 
 En producción usa un WSGI como **gunicorn**:
 ```bash

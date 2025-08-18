@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, abort
 import sqlalchemy as sa
 from ...models import db, Catalogo, CatalogoSesion, CatalogoSesionVersion
 from ...decorators import require_auth
+from sqlalchemy.exc import IntegrityError
 
 versiones_bp = Blueprint("versiones", __name__, url_prefix="/versiones")
 
@@ -53,69 +54,119 @@ def _get_version_or_404(version_id: int) -> CatalogoSesionVersion:
         abort(404, description="versión no existe")
     return v
 
+@versiones_bp.post("/<int:version_id>/current")
+@require_auth
+def forzar_current(version_id: int):
+    v = _get_version_or_404(version_id)
+    if v.is_final:
+        return jsonify({"error": "no se puede marcar current una versión final"}), 409
+
+    try:
+        with db.session.begin():
+            # Lock de la sesión para serializar el cambio de current
+            s_locked = db.session.execute(
+                sa.select(CatalogoSesion)
+                .where(CatalogoSesion.id == v.sesion_id)
+                .with_for_update()
+            ).scalar_one()
+
+            # Apagar todos los current de la sesión
+            db.session.execute(
+                sa.update(CatalogoSesionVersion)
+                .where(CatalogoSesionVersion.sesion_id == s_locked.id)
+                .values(is_current=False)
+            )
+            # Prender el de esta versión
+            db.session.execute(
+                sa.update(CatalogoSesionVersion)
+                .where(CatalogoSesionVersion.id == v.id)
+                .values(is_current=True)
+            )
+
+        # fin with -> commit OK
+        # Refrescar instancia para devolverla actualizada
+        db.session.refresh(v)
+        return jsonify(_version_to_json(v))
+
+    except IntegrityError:
+        db.session.rollback()
+        # Índice parcial uq_sesion_current
+        return jsonify({"error": "no se pudo marcar current (conflicto de concurrencia)"}), 409
+
 
 @versiones_bp.post("/sesiones/<int:sesion_id>")
 @require_auth
 def crear_version(sesion_id: int):
+    # Pre-existencia rápida (fuera de transacción)
     s = db.session.get(CatalogoSesion, sesion_id)
     if not s:
         abort(404, description="sesión no existe")
 
-    c = db.session.get(Catalogo, s.catalogo_id)
-    if not c:
-        abort(404, description="catálogo no existe")
-    if c.estado != "EN_PROCESO":
-        return jsonify({"error": "catálogo no admite nuevas versiones"}), 409
+    try:
+        # Transacción explícita
+        with db.session.begin():
+            # 1) Lock a nivel catálogo (orden de lock consistente con otros flujos como /aprobar)
+            c = db.session.execute(
+                sa.select(Catalogo)
+                .where(Catalogo.id == s.catalogo_id)
+                .with_for_update()
+            ).scalar_one()
 
-    # último número de versión (sin FOR SHARE)
-    last_num = db.session.scalar(
-        sa.select(CatalogoSesionVersion.version_num)
-        .where(
-            CatalogoSesionVersion.sesion_id == s.id,
-            CatalogoSesionVersion.catalogo_id == c.id,
-        )
-        .order_by(CatalogoSesionVersion.version_num.desc())
-        .limit(1)
-    ) or 0
-    next_num = int(last_num) + 1
+            if c.estado != "EN_PROCESO":
+                return jsonify({"error": "catálogo no admite nuevas versiones"}), 409
 
-    # anular current previo de la sesión
-    db.session.execute(
-        sa.update(CatalogoSesionVersion)
-        .where(CatalogoSesionVersion.sesion_id == s.id)
-        .values(is_current=False)
-    )
+            # 2) Lock de la sesión
+            s_locked = db.session.execute(
+                sa.select(CatalogoSesion)
+                .where(CatalogoSesion.id == s.id)
+                .with_for_update()
+            ).scalar_one()
 
-    # snapshot desde producto + overrides
-    prod = c.producto
-    body = request.get_json(silent=True) or {}
+            # 3) Obtener versión tope y bloquearla (si existe)
+            last_num = db.session.scalar(
+                sa.select(CatalogoSesionVersion.version_num)
+                .where(CatalogoSesionVersion.sesion_id == s_locked.id)
+                .order_by(CatalogoSesionVersion.version_num.desc())
+                .limit(1)
+                .with_for_update()
+            ) or 0
+            next_num = int(last_num) + 1
 
-    v = CatalogoSesionVersion(
-        sesion_id=s.id,
-        catalogo_id=c.id,
-        producto_id=prod.id,
-        version_num=next_num,
-        estado="BORRADOR",
-        is_current=True,
-        is_final=False,
-        um=body.get("um", prod.um),
-        doc_x_bulto_caja=body.get("doc_x_bulto_caja", prod.doc_x_bulto_caja),
-        doc_x_paq=body.get("doc_x_paq", prod.doc_x_paq),
-        precio_exw=body.get("precio_exw", prod.precio_exw),
-        familia=body.get("familia", prod.familia),
-        foto_key=body.get("foto_key", prod.imagen_key),
-        cant_bultos=body.get("cant_bultos", 0),
-        porc_desc=body.get("porc_desc"),
-        observaciones=body.get("observaciones"),
-        peso_gr=body.get("peso_gr"),
-        largo_cm=body.get("largo_cm"),
-        ancho_cm=body.get("ancho_cm"),
-        alto_cm=body.get("alto_cm"),
-    )
+            # 4) Snapshot desde producto + overrides
+            prod = c.producto
+            body = request.get_json(silent=True) or {}
 
-    db.session.add(v)
-    db.session.commit()
-    return jsonify(_version_to_json(v)), 201
+            v = CatalogoSesionVersion(
+                sesion_id=s_locked.id,
+                catalogo_id=c.id,
+                producto_id=prod.id,
+                version_num=next_num,
+                estado="BORRADOR",
+                is_current=False,        # ← no tocamos current aquí
+                is_final=False,
+                um=body.get("um", prod.um),
+                doc_x_bulto_caja=body.get("doc_x_bulto_caja", prod.doc_x_bulto_caja),
+                doc_x_paq=body.get("doc_x_paq", prod.doc_x_paq),
+                precio_exw=body.get("precio_exw", prod.precio_exw),
+                familia=body.get("familia", prod.familia),
+                foto_key=body.get("foto_key", prod.imagen_key),
+                cant_bultos=body.get("cant_bultos", 0),
+                porc_desc=body.get("porc_desc"),
+                observaciones=body.get("observaciones"),
+                peso_gr=body.get("peso_gr"),
+                largo_cm=body.get("largo_cm"),
+                ancho_cm=body.get("ancho_cm"),
+                alto_cm=body.get("alto_cm"),
+            )
+
+            db.session.add(v)
+        # fin with -> commit OK
+        return jsonify(_version_to_json(v)), 201
+
+    except IntegrityError:
+        db.session.rollback()
+        # Puede ser colisión en uq_version_por_sesion o similar si hubo carrera extrema
+        return jsonify({"error": "no se pudo crear la versión (conflicto de concurrencia)"}), 409
 
 
 @versiones_bp.get("/<int:version_id>")
@@ -182,30 +233,72 @@ def rechazar_version(version_id: int):
     return _set_estado(v, "RECHAZADA")
 
 
+
 @versiones_bp.post("/<int:version_id>/aprobar")
 @require_auth
 def aprobar_version(version_id: int):
-    v = _get_version_or_404(version_id)
-    if v.estado not in ("ENVIADA", "CONTRAOFERTA"):
-        return jsonify({"error": "solo ENVIADA/CONTRAOFERTA puede APROBARSE"}), 409
+    # Obtenemos referencia rápida (fuera de transacción) para saber ids
+    base_v = _get_version_or_404(version_id)
 
-    # marcar final y cerrar catálogo
-    v.estado = "APROBADA"
-    v.is_final = True
-    # asegurar current sobre esta versión
-    db.session.execute(
-        sa.update(CatalogoSesionVersion)
-        .where(CatalogoSesionVersion.sesion_id == v.sesion_id)
-        .values(is_current=False)
-    )
-    v.is_current = True
+    try:
+        with db.session.begin():
+            # 1) Lock del catálogo (mismo orden que en crear_version)
+            c = db.session.execute(
+                sa.select(Catalogo)
+                .where(Catalogo.id == base_v.catalogo_id)
+                .with_for_update()
+            ).scalar_one()
 
-    c = db.session.get(Catalogo, v.catalogo_id)
-    c.final_version_id = v.id
-    c.estado = "CERRADA"
+            if c.estado != "EN_PROCESO":
+                return jsonify({"error": "catálogo no editable / no admite aprobación"}), 409
 
-    db.session.commit()
-    return jsonify(_version_to_json(v))
+            # 2) Lock de la sesión (serializa cambios de 'current')
+            s_locked = db.session.execute(
+                sa.select(CatalogoSesion)
+                .where(CatalogoSesion.id == base_v.sesion_id)
+                .with_for_update()
+            ).scalar_one()
+
+            # 3) Lock de la versión objetivo (fila concreta)
+            v = db.session.execute(
+                sa.select(CatalogoSesionVersion)
+                .where(CatalogoSesionVersion.id == base_v.id)
+                .with_for_update()
+            ).scalar_one()
+
+            if v.estado not in ("ENVIADA", "CONTRAOFERTA"):
+                return jsonify({"error": "solo ENVIADA/CONTRAOFERTA puede APROBARSE"}), 409
+
+            # 4) Pre-chequeo bajo lock: si ya tiene final, conflict
+            if c.final_version_id is not None:
+                return jsonify({"error": "el catálogo ya tiene una versión final"}), 409
+
+            # (La unicidad real está protegida por el índice parcial uq_catalogo_final_total)
+
+            # 5) Cambios atómicos: estado versión + current + final + cierre catálogo
+            v.estado = "APROBADA"
+
+            # Asegurar 'current' solo en esta versión dentro de la sesión
+            db.session.execute(
+                sa.update(CatalogoSesionVersion)
+                .where(CatalogoSesionVersion.sesion_id == s_locked.id)
+                .values(is_current=False)
+            )
+            v.is_current = True
+            v.is_final = True
+
+            # Cerrar catálogo y apuntar a la versión final
+            c.final_version_id = v.id
+            c.estado = "CERRADA"
+
+        # fin with -> commit OK; refrescamos para devolver valores finales
+        db.session.refresh(v)
+        return jsonify(_version_to_json(v)), 200
+
+    except IntegrityError:
+        db.session.rollback()
+        # Algún proceso paralelo pudo aprobar otra; el índice parcial lo detecta
+        return jsonify({"error": "otra versión fue aprobada en paralelo"}), 409
 
 
 @versiones_bp.post("/<int:version_id>/current")
