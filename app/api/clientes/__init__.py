@@ -1,4 +1,5 @@
-from flask import Blueprint, request, jsonify, abort
+# backend/blueprints/clientes.py
+from flask import Blueprint, request, jsonify, abort, make_response
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
 from ...models import db, Cliente
@@ -8,15 +9,13 @@ clientes_bp = Blueprint("clientes", __name__, url_prefix="/clientes")
 
 TIPOS_DOC = {"DNI","RUC","CE","PASAPORTE","OTRO"}
 
-def _num(n):  # no se usa aquí, pero lo dejo por simetría
-    return float(n) if n is not None else None
-
 def serialize_cliente(c: Cliente) -> dict:
     return {
         "id": c.id,
         "tipo_doc": c.tipo_doc,
         "num_doc": c.num_doc,
         "nombre": c.nombre,
+        "descripcion": c.descripcion,
         "pais": c.pais,
         "ciudad": c.ciudad,
         "zona": c.zona,
@@ -35,9 +34,13 @@ def _paginated(query):
     items = query.limit(per_page).offset((page-1)*per_page).all()
     return items, page, per_page
 
-@clientes_bp.get("")
+@clientes_bp.route("", methods=["GET", "OPTIONS"])
+@clientes_bp.route("/", methods=["GET", "OPTIONS"])
 @require_auth
 def listar_clientes():
+    if request.method == "OPTIONS":
+        return make_response(("", 204))
+
     q = Cliente.query
     search = (request.args.get("search") or "").strip()
     pais = (request.args.get("pais") or "").strip()
@@ -61,9 +64,13 @@ def listar_clientes():
         "page": page, "per_page": per_page
     })
 
-@clientes_bp.post("")
+@clientes_bp.route("", methods=["POST", "OPTIONS"])
+@clientes_bp.route("/", methods=["POST", "OPTIONS"])
 @require_auth
 def crear_cliente():
+    if request.method == "OPTIONS":
+        return make_response(("", 204))
+
     data = request.get_json() or {}
     tipo_doc = (data.get("tipo_doc") or "").strip().upper()
     num_doc  = (data.get("num_doc") or "").strip()
@@ -73,11 +80,13 @@ def crear_cliente():
     if tipo_doc not in TIPOS_DOC:
         abort(400, description=f"tipo_doc inválido: {tipo_doc}")
 
+    descripcion = data.get("descripcion") or data.get("description")
     c = Cliente(
         tipo_doc=tipo_doc, num_doc=num_doc, nombre=nombre,
         pais=data.get("pais"), ciudad=data.get("ciudad"),
         zona=data.get("zona"), direccion=data.get("direccion"),
-        clasificacion_riesgo=(data.get("clasificacion_riesgo") or "MEDIO")
+        clasificacion_riesgo=(data.get("clasificacion_riesgo") or "MEDIO"),
+        descripcion=descripcion
     )
     db.session.add(c)
     try:
@@ -87,17 +96,22 @@ def crear_cliente():
         abort(409, description="cliente duplicado (tipo_doc + num_doc)")
     return jsonify(serialize_cliente(c)), 201
 
-@clientes_bp.get("/<int:cliente_id>")
+@clientes_bp.route("/<int:cliente_id>", methods=["GET", "OPTIONS"])
 @require_auth
 def obtener_cliente(cliente_id: int):
+    if request.method == "OPTIONS":
+        return make_response(("", 204))
     c = db.session.get(Cliente, cliente_id)
     if not c:
         abort(404)
     return jsonify(serialize_cliente(c))
 
-@clientes_bp.patch("/<int:cliente_id>")
+@clientes_bp.route("/<int:cliente_id>", methods=["PATCH", "OPTIONS"])
 @require_auth
 def editar_cliente(cliente_id: int):
+    if request.method == "OPTIONS":
+        return make_response(("", 204))
+
     c = db.session.get(Cliente, cliente_id)
     if not c:
         abort(404)
@@ -113,9 +127,13 @@ def editar_cliente(cliente_id: int):
         nd = (data["num_doc"] or "").strip()
         c.num_doc = nd or c.num_doc
 
-    for k in ["nombre","pais","ciudad","zona","direccion","clasificacion_riesgo"]:
+    for k in ["nombre","pais","ciudad","zona","direccion","clasificacion_riesgo","descripcion"]:
         if k in data:
             setattr(c, k, (data[k] or None))
+
+    # Soporta 'description' si llega en vez de 'descripcion'
+    if "description" in data and "descripcion" not in data:
+        c.descripcion = data["description"] or None
 
     try:
         db.session.commit()
@@ -124,17 +142,18 @@ def editar_cliente(cliente_id: int):
         abort(409, description="cliente duplicado (tipo_doc + num_doc)")
     return jsonify(serialize_cliente(c))
 
-@clientes_bp.delete("/<int:cliente_id>")
+@clientes_bp.route("/<int:cliente_id>", methods=["DELETE", "OPTIONS"])
 @require_auth
 def eliminar_cliente(cliente_id: int):
+    if request.method == "OPTIONS":
+        return make_response(("", 204))
     c = db.session.get(Cliente, cliente_id)
     if not c:
         abort(404)
     db.session.delete(c)
     try:
         db.session.commit()
-    except IntegrityError as e:
+    except IntegrityError:
         db.session.rollback()
-        # probablemente referenciado por catalogo (RESTRICT)
         abort(409, description="no se puede borrar: cliente referenciado")
     return jsonify({"ok": True})

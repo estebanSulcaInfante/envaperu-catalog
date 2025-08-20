@@ -19,7 +19,7 @@ class Cliente(db.Model):
     tipo_doc = db.Column(db.String(20), nullable=False)  # DNI | RUC | CE | PASAPORTE | OTRO
     num_doc  = db.Column(db.String(80), nullable=False)  # número de doc identidad
     nombre   = db.Column(db.Text, nullable=False)
-
+    descripcion = db.Column(db.Text)
     pais      = db.Column(db.Text)
     ciudad    = db.Column(db.Text)
     zona      = db.Column(db.Text)
