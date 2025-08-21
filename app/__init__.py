@@ -20,8 +20,10 @@ def create_app(env_name: str | None = None, config_overrides: dict | None = None
     # Inicializa extensiones y registra blueprints
     register_extensions(app)
 
+    # Evita redirecciones 308 por barra final: admite con y sin '/'
+    app.url_map.strict_slashes = False
 
-    
+
     register_blueprints(app)
 
     # Errores genéricos
