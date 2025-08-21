@@ -155,6 +155,24 @@ usando `SUPABASE_SERVICE_ROLE_KEY`. El endpoint `/imagen/url` devuelve una URL f
 ---
 ## 3. Clientes
 
+El recurso **Cliente** representa la empresa o persona a la que se le vende un producto.
+
+Campos devueltos por la API:
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| id | int | Identificador interno |
+| tipo_doc | str | Tipo de documento: `DNI`, `RUC`, `CE`, `PASAPORTE`, `OTRO` |
+| num_doc | str | Número de documento |
+| nombre | str | Razón social o nombre |
+| descripcion | str \| null | Notas adicionales |
+| pais | str \| null | Código ISO-2 (`PE`, `CL`, `CO`, …) |
+| ciudad | str \| null | Ciudad |
+| zona | str \| null | Zona / distrito |
+| direccion | str \| null | Dirección física |
+| clasificacion_riesgo | str | `ALTO`, `MEDIO` (por defecto) o `BAJO` |
+| created_at | str | Fecha ISO-8601 de creación |
+
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
 | GET | `/api/clientes` | Lista clientes (`search`, `pais`, `ciudad`, `page`, `per_page`). |
@@ -164,43 +182,114 @@ usando `SUPABASE_SERVICE_ROLE_KEY`. El endpoint `/imagen/url` devuelve una URL f
 | DELETE | `/api/clientes/{id}` | Elimina cliente (si no está referenciado). |
 
 ### 3.1 Listar clientes
-```bash
-curl -X GET "{{base}}/api/clientes?search=limeña&pais=PE&page=1&per_page=20" \
-     -H "Authorization: Bearer {{token}}"
+
+`GET /api/clientes`
+
+Respuesta 200:
+
+```json
+{
+  "data": [
+    {
+      "id": 1,
+      "tipo_doc": "RUC",
+      "num_doc": "20123456789",
+      "nombre": "Cliente S.A.",
+      "descripcion": null,
+      "pais": "PE",
+      "ciudad": "Lima",
+      "zona": null,
+      "direccion": null,
+      "clasificacion_riesgo": "MEDIO",
+      "created_at": "2024-01-10T15:23:11Z"
+    }
+  ],
+  "page": 1,
+  "per_page": 20
+}
 ```
 
 ### 3.2 Crear cliente
-```bash
-curl -X POST {{base}}/api/clientes \
-     -H "Authorization: Bearer {{token}}" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "tipo_doc":"RUC",          # DNI | RUC | CE | PASAPORTE | OTRO
-       "num_doc":"20123456789",
-       "nombre":"Cliente S.A.",
-       "pais":"PE",
-       "ciudad":"Lima"
-     }'
+
+`POST /api/clientes`
+
+Request:
+
+```json
+{
+  "tipo_doc": "RUC",
+  "num_doc": "20123456789",
+  "nombre": "Cliente S.A.",
+  "pais": "PE",
+  "ciudad": "Lima"
+}
+```
+
+Respuesta 201:
+
+```json
+{
+  "id": 1,
+  "tipo_doc": "RUC",
+  "num_doc": "20123456789",
+  "nombre": "Cliente S.A.",
+  "descripcion": null,
+  "pais": "PE",
+  "ciudad": "Lima",
+  "zona": null,
+  "direccion": null,
+  "clasificacion_riesgo": "MEDIO",
+  "created_at": "2024-01-10T15:23:11Z"
+}
 ```
 
 ### 3.3 Obtener cliente
-```bash
-curl -X GET {{base}}/api/clientes/1 \
-     -H "Authorization: Bearer {{token}}"
-```
+
+`GET /api/clientes/{id}`
+
+Respuesta 200: *idéntica al ejemplo de creación*
 
 ### 3.4 Editar cliente
-```bash
-curl -X PATCH {{base}}/api/clientes/1 \
-     -H "Authorization: Bearer {{token}}" \
-     -H "Content-Type: application/json" \
-     -d '{"ciudad":"Arequipa","clasificacion_riesgo":"BAJO"}'
+
+`PATCH /api/clientes/{id}`
+
+Request:
+
+```json
+{
+  "ciudad": "Arequipa",
+  "clasificacion_riesgo": "BAJO"
+}
+```
+
+Respuesta 200:
+
+```json
+{
+  "id": 1,
+  "tipo_doc": "RUC",
+  "num_doc": "20123456789",
+  "nombre": "Cliente S.A.",
+  "descripcion": null,
+  "pais": "PE",
+  "ciudad": "Arequipa",
+  "zona": null,
+  "direccion": null,
+  "clasificacion_riesgo": "BAJO",
+  "created_at": "2024-01-10T15:23:11Z"
+}
 ```
 
 ### 3.5 Eliminar cliente
-```bash
-curl -X DELETE {{base}}/api/clientes/1 \
-     -H "Authorization: Bearer {{token}}"
+
+`DELETE /api/clientes/{id}`
+
+Respuesta 200:
+
+```json
+{
+  "ok": true
+}
 ```
 
 ---
