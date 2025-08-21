@@ -4,7 +4,7 @@ from sqlalchemy.exc import IntegrityError
 from ...models import db, Catalogo, CatalogoSesion, CatalogoSesionVersion
 from ...decorators import require_auth
 
-sesiones_bp = Blueprint("sesiones", __name__, url_prefix="/sesiones")
+sesiones_bp = Blueprint("sesiones", __name__, url_prefix="")
 
 
 def _num(x):
@@ -62,7 +62,7 @@ def _paginated(q):
 # ---------------------------
 # GET /api/catalogos/{catalogo_id}/sesiones
 # ---------------------------
-@sesiones_bp.get("/catalogos/<int:catalogo_id>")
+@sesiones_bp.get("/catalogos/<int:catalogo_id>/sesiones")
 @require_auth
 def listar_sesiones(catalogo_id: int):
     c = _get_catalogo_or_404(catalogo_id)
@@ -101,7 +101,7 @@ def listar_sesiones(catalogo_id: int):
 # ---------------------------
 # POST /api/catalogos/{catalogo_id}/sesiones
 # ---------------------------
-@sesiones_bp.post("/catalogos/<int:catalogo_id>")
+@sesiones_bp.post("/catalogos/<int:catalogo_id>/sesiones")
 @require_auth
 def crear_sesion(catalogo_id: int):
     c = _get_catalogo_or_404(catalogo_id)

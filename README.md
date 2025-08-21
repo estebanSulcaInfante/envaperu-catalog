@@ -295,162 +295,417 @@ Respuesta 200:
 ---
 ## 4. Catálogos
 
+El recurso **Catálogo** vincula un *cliente* con un *producto* y consolida todas las negociaciones (sesiones y versiones) realizadas. Cada catálogo está en uno de estos estados:
+
+* `EN_PROCESO` – negociación en curso (estado inicial).
+* `CERRADA` – se aprobó una versión final.
+* `CANCELADA` – se canceló manualmente (solo si no tiene versión final).
+
+Campos devueltos por la API (`serialize_catalogo`):
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| id | int | Identificador interno |
+| cliente_id | int | Id del cliente |
+| producto_id | int | Id del producto |
+| estado | str | `EN_PROCESO`, `CERRADA`, `CANCELADA` |
+| final_version_id | int \| null | Id de la versión final aprobada |
+| created_at | str | ISO-8601 |
+| cliente_nombre | str | Solo para conveniencia de UI |
+| producto_nombre | str | Solo para conveniencia de UI |
+| final_version | obj \| null | Resumen de la versión final (ver **Versiones**) |
+
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/catalogos` | Lista catálogos (`cliente_id`, `producto_id`, `estado`, `with_final`, `search`, paginación). |
-| POST | `/api/catalogos` | Crea un catálogo (único por cliente + producto) y una sesión inicial. |
+| GET | `/api/catalogos` | Lista catálogos (`cliente_id`, `producto_id`, `estado`, `with_final`, `search`, `page`, `per_page`). |
+| POST | `/api/catalogos` | Crea un nuevo catálogo + sesión inicial. |
 | GET | `/api/catalogos/{id}` | Obtiene un catálogo por id. |
-| GET | `/api/catalogos/{id}/final` | Devuelve la versión final aprobada (404 si no existe). |
-| PATCH | `/api/catalogos/{id}` | Cambia estado a `CANCELADA` (solo si no hay versión final). |
+| GET | `/api/catalogos/{id}/final` | Devuelve la versión final (404 si no existe). |
+| PATCH | `/api/catalogos/{id}` | Cambia estado a `CANCELADA` (solo si no tiene final). |
 
 ### 4.1 Listar catálogos
-```bash
-curl -X GET "{{base}}/api/catalogos?cliente_id=1&estado=EN_PROCESO&with_final=false&page=1&per_page=20" \
-     -H "Authorization: Bearer {{token}}"
+
+`GET /api/catalogos?cliente_id=1&estado=EN_PROCESO&page=1&per_page=20`
+
+Respuesta 200:
+
+```json
+{
+  "data": [
+    {
+      "id": 5,
+      "cliente_id": 1,
+      "producto_id": 2,
+      "estado": "EN_PROCESO",
+      "final_version_id": null,
+      "created_at": "2024-02-03T10:15:20Z",
+      "cliente_nombre": "Cliente S.A.",
+      "producto_nombre": "Lapicero azul",
+      "final_version": null
+    }
+  ],
+  "page": 1,
+  "per_page": 20
+}
 ```
-*Filtros disponibles*
-- `cliente_id`, `producto_id`: ids exactos.  
-- `estado`: EN_PROCESO | CERRADA | CANCELADA.  
-- `with_final`: true/false para filtrar si tienen versión final.  
-- `search`: busca en nombre de cliente y producto (case-insensitive).
 
 ### 4.2 Crear catálogo
-```bash
-curl -X POST {{base}}/api/catalogos \
-     -H "Authorization: Bearer {{token}}" \
-     -H "Content-Type: application/json" \
-     -d '{
-       "cliente_id":1,
-       "producto_id":2,
-       "etiqueta":"escenario principal"   # etiqueta de la sesión inicial (opcional)
-     }'
+
+`POST /api/catalogos`
+
+Request:
+
+```json
+{
+  "cliente_id": 1,
+  "producto_id": 2,
+  "etiqueta": "escenario principal"
+}
 ```
-Respuesta **201** incluye `id`, `estado` (EN_PROCESO) y `final_version_id=null`.
+
+Respuesta 201:
+
+```json
+{
+  "id": 6,
+  "cliente_id": 1,
+  "producto_id": 2,
+  "estado": "EN_PROCESO",
+  "final_version_id": null,
+  "created_at": "2024-02-05T09:12:00Z",
+  "cliente_nombre": "Cliente S.A.",
+  "producto_nombre": "Lapicero azul",
+  "final_version": null
+}
+```
 
 ### 4.3 Obtener catálogo
-```bash
-curl -X GET {{base}}/api/catalogos/5 \
-     -H "Authorization: Bearer {{token}}"
+
+`GET /api/catalogos/{id}`
+
+Respuesta 200: igual al objeto anterior.
+
+### 4.4 Obtener versión final
+
+`GET /api/catalogos/{id}/final`
+
+Respuesta 200 (ejemplo simplificado):
+
+```json
+{
+  "id": 42,
+  "sesion_id": 10,
+  "catalogo_id": 6,
+  "producto_id": 2,
+  "version_num": 3,
+  "estado": "APROBADA",
+  "is_current": true,
+  "is_final": true,
+  "um": "UNID",
+  "precio_exw": 1.10,
+  "porc_desc": 0.05,
+  "subtotal_exw": 1050.0,
+  "created_at": "2024-02-05T11:30:00Z"
+  // …otros campos calculados omitidos para brevedad
+}
 ```
 
-### 4.4 Versión final
-```bash
-curl -X GET {{base}}/api/catalogos/5/final \
-     -H "Authorization: Bearer {{token}}"
-# 200 -> snapshot de la versión aprobada
-```
-Si el catálogo aún no tiene final → **404**.
+Si el catálogo aún no tiene versión final ➜ **404**.
 
 ### 4.5 Cancelar catálogo
-Solo posible si **NO** tiene versión final (`final_version_id=null`).
-```bash
-curl -X PATCH {{base}}/api/catalogos/5 \
-     -H "Authorization: Bearer {{token}}" \
-     -H "Content-Type: application/json" \
-     -d '{"estado":"CANCELADA"}'
+
+`PATCH /api/catalogos/{id}`
+
+Request:
+
+```json
+{
+  "estado": "CANCELADA"
+}
 ```
-*Reglas*:
-- No puede cambiar a `CERRADA` manualmente (la asigna la aprobación de versión).  
-- Si ya está `CERRADA` → solo lectura.  
-- Si tiene final → no se permite cancelar.
+
+Respuesta 200:
+
+```json
+{
+  "id": 6,
+  "cliente_id": 1,
+  "producto_id": 2,
+  "estado": "CANCELADA",
+  "final_version_id": null,
+  "created_at": "2024-02-05T09:12:00Z",
+  "cliente_nombre": "Cliente S.A.",
+  "producto_nombre": "Lapicero azul",
+  "final_version": null
+}
+```
 
 ---
 ## 5. Sesiones
 
+Una **Sesión** agrupa las diferentes **Versiones** de negociación de un catálogo. Puede estar activa o inactiva y opcionalmente exponer la versión vigente dentro de la sesión.
+
+Campos devueltos por la API (`serialize_sesion`):
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| id | int | Identificador interno |
+| catalogo_id | int | Id del catálogo al que pertenece |
+| etiqueta | str | Nombre descriptivo definido por usuario |
+| is_active | bool | `true` si la sesión está abierta |
+| created_at | str | ISO-8601 |
+| current_version | obj \| null | Versión vigente (si se solicita con `with_current=true`) |
+
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/catalogos/{catalogo_id}/sesiones` | Lista sesiones del catálogo (`is_active`, `with_current`, paginación). |
-| POST | `/api/catalogos/{catalogo_id}/sesiones` | Crea una nueva sesión en el catálogo. |
-| GET | `/api/sesiones/{id}` | Obtiene una sesión (`with_current=true` para incluir versión vigente). |
+| GET | `/api/catalogos/{catalogo_id}/sesiones` | Lista sesiones (`is_active`, `with_current`, paginación). |
+| POST | `/api/catalogos/{catalogo_id}/sesiones` | Crea una sesión nueva. |
+| GET | `/api/sesiones/{id}` | Obtiene una sesión (`with_current=true` opcional). |
 | PATCH | `/api/sesiones/{id}` | Edita etiqueta o `is_active`. |
 | DELETE | `/api/sesiones/{id}` | Elimina la sesión (solo si no tiene versiones). |
 
 ### 5.1 Listar sesiones de un catálogo
-```bash
-curl -X GET "{{base}}/api/catalogos/5/sesiones?is_active=true&with_current=true&page=1&per_page=20" \
-     -H "Authorization: Bearer {{token}}"
+
+`GET /api/catalogos/5/sesiones?is_active=true&with_current=true&page=1&per_page=20`
+
+Respuesta 200:
+
+```json
+{
+  "data": [
+    {
+      "id": 10,
+      "catalogo_id": 5,
+      "etiqueta": "escenario principal",
+      "is_active": true,
+      "created_at": "2024-02-05T09:30:00Z",
+      "current_version": {
+        "id": 40,
+        "version_num": 2,
+        "estado": "ENVIADA",
+        "is_current": true,
+        "is_final": false,
+        "precio_exw": 1.15,
+        "porc_desc": 0.04,
+        "subtotal_exw": 920.0
+      }
+    }
+  ],
+  "page": 1,
+  "per_page": 20
+}
 ```
 
 ### 5.2 Crear sesión
-```bash
-curl -X POST {{base}}/api/catalogos/5/sesiones \
-     -H "Authorization: Bearer {{token}}" \
-     -H "Content-Type: application/json" \
-     -d '{"etiqueta":"escenario B"}'
+
+`POST /api/catalogos/{catalogo_id}/sesiones`
+
+Request:
+
+```json
+{
+  "etiqueta": "escenario B"
+}
 ```
 
-### 5.3 Obtener sesión (incl. versión vigente)
-```bash
-curl -X GET "{{base}}/api/sesiones/10?with_current=true" \
-     -H "Authorization: Bearer {{token}}"
+Respuesta 201:
+
+```json
+{
+  "id": 11,
+  "catalogo_id": 5,
+  "etiqueta": "escenario B",
+  "is_active": true,
+  "created_at": "2024-02-05T10:00:00Z",
+  "current_version": null
+}
 ```
+
+### 5.3 Obtener sesión (incluyendo versión vigente)
+
+`GET /api/sesiones/11?with_current=true`
+
+Respuesta 200: (idéntico al objeto anterior, con `current_version` si existiera).
 
 ### 5.4 Editar sesión
-```bash
-curl -X PATCH {{base}}/api/sesiones/10 \
-     -H "Authorization: Bearer {{token}}" \
-     -H "Content-Type: application/json" \
-     -d '{"etiqueta":"escenario B ajustado","is_active":false}'
+
+`PATCH /api/sesiones/{id}`
+
+Request:
+
+```json
+{
+  "etiqueta": "escenario B ajustado",
+  "is_active": false
+}
+```
+
+Respuesta 200:
+
+```json
+{
+  "id": 11,
+  "catalogo_id": 5,
+  "etiqueta": "escenario B ajustado",
+  "is_active": false,
+  "created_at": "2024-02-05T10:00:00Z",
+  "current_version": null
+}
 ```
 
 ### 5.5 Eliminar sesión
-```bash
-curl -X DELETE {{base}}/api/sesiones/10 \
-     -H "Authorization: Bearer {{token}}"
+
+`DELETE /api/sesiones/{id}`
+
+Respuesta 200:
+
+```json
+{
+  "ok": true
+}
 ```
 
 ---
 ## 6. Versiones
 
+Una **Versión** es un snapshot de los datos de producto dentro de una sesión de negociación.
+
+Estados posibles y transición:
+
+- `BORRADOR` *(inicial)* → `ENVIADA` `/enviar`
+- `ENVIADA` → `CONTRAOFERTA` `/contraoferta`
+- `ENVIADA`/`CONTRAOFERTA` → `RECHAZADA` `/rechazar`
+- `ENVIADA`/`CONTRAOFERTA` → `APROBADA` `/aprobar` (marca `is_final=true` y cierra catálogo)
+
+Campos devueltos por la API (`_version_to_json`):
+
+| Campo | Tipo | Descripción |
+|-------|------|-------------|
+| id | int | Identificador interno |
+| sesion_id | int | Id de la sesión |
+| catalogo_id | int | Id del catálogo |
+| producto_id | int | Id del producto |
+| version_num | int | Número de versión dentro de la sesión |
+| estado | str | BORRADOR, ENVIADA, CONTRAOFERTA, RECHAZADA, APROBADA |
+| is_current | bool | Versión vigente dentro de la sesión |
+| is_final | bool | `true` si es la versión final aprobada |
+| um, precio_exw, porc_desc, … | var | Snapshot de campos de producto y métricas calculadas |
+| created_at | str | ISO-8601 |
+
 | Método | Endpoint | Descripción |
 |--------|----------|-------------|
-| GET | `/api/sesiones/{sesion_id}/versiones` | Lista versiones de la sesión (`estado`, `is_current`, paginación). |
-| POST | `/api/sesiones/{sesion_id}/versiones` | Crea versión (snapshot) a partir del producto maestro. |
-| GET | `/api/versiones/{id}` | Obtiene una versión por id. |
-| PATCH | `/api/versiones/{id}` | Edita snapshot (solo en estados BORRADOR / ENVIADA). |
-| POST | `/api/versiones/{id}/enviar` | Pasa de BORRADOR/CONTRAOFERTA → ENVIADA. |
-| POST | `/api/versiones/{id}/contraoferta` | Marca ENVIADA → CONTRAOFERTA. |
-| POST | `/api/versiones/{id}/rechazar` | Marca ENVIADA/CONTRAOFERTA → RECHAZADA. |
-| POST | `/api/versiones/{id}/aprobar` | Marca ENVIADA/CONTRAOFERTA → APROBADA y `is_final=true` (cierra catálogo). |
-| POST | `/api/versiones/{id}/current` | Fuerza la versión como vigente dentro de la sesión. |
+| GET | `/api/sesiones/{sesion_id}/versiones` | Lista versiones (`estado`, `is_current`, paginación). |
+| POST | `/api/sesiones/{sesion_id}/versiones` | Crea versión a partir del producto maestro. |
+| GET | `/api/versiones/{id}` | Obtiene una versión. |
+| PATCH | `/api/versiones/{id}` | Edita snapshot (estados BORRADOR, ENVIADA, CONTRAOFERTA). |
+| POST | `/api/versiones/{id}/enviar` | Cambia BORRADOR → ENVIADA. |
+| POST | `/api/versiones/{id}/contraoferta` | ENVIADA → CONTRAOFERTA. |
+| POST | `/api/versiones/{id}/rechazar` | ENVIADA/CONTRAOFERTA → RECHAZADA. |
+| POST | `/api/versiones/{id}/aprobar` | ENVIADA/CONTRAOFERTA → APROBADA (final & cierra catálogo). |
+| POST | `/api/versiones/{id}/current` | Marca como vigente dentro de la sesión. |
 
 ### 6.1 Listar versiones de una sesión
-```bash
-curl -X GET "{{base}}/api/sesiones/10/versiones?is_current=true" \
-     -H "Authorization: Bearer {{token}}"
+
+`GET /api/sesiones/10/versiones?is_current=true`
+
+Respuesta 200:
+
+```json
+{
+  "data": [
+    {
+      "id": 40,
+      "sesion_id": 10,
+      "catalogo_id": 5,
+      "producto_id": 2,
+      "version_num": 2,
+      "estado": "ENVIADA",
+      "is_current": true,
+      "is_final": false,
+      "precio_exw": 1.15,
+      "porc_desc": 0.04,
+      "subtotal_exw": 920.0,
+      "created_at": "2024-02-05T09:45:00Z"
+    }
+  ],
+  "page": 1,
+  "per_page": 20
+}
 ```
 
 ### 6.2 Crear versión
-```bash
-curl -X POST {{base}}/api/sesiones/10/versiones \
-     -H "Authorization: Bearer {{token}}" \
-     -H "Content-Type: application/json" \
-     -d '{"precio_exw":1.10,"porc_desc":0.07}'
+
+`POST /api/sesiones/{sesion_id}/versiones`
+
+Request:
+
+```json
+{
+  "precio_exw": 1.10,
+  "porc_desc": 0.07
+}
 ```
 
-### 6.3 Flujo de estados
-```mermaid
-stateDiagram-v2
-    [*] --> BORRADOR
-    BORRADOR --> ENVIADA : /enviar
-    ENVIADA --> CONTRAOFERTA : /contraoferta
-    CONTRAOFERTA --> ENVIADA : /enviar (nueva contraoferta)
-    ENVIADA --> APROBADA : /aprobar
-    CONTRAOFERTA --> APROBADA : /aprobar
-    ENVIADA --> RECHAZADA : /rechazar
-    CONTRAOFERTA --> RECHAZADA : /rechazar
+Respuesta 201 (BORRADOR):
+
+```json
+{
+  "id": 41,
+  "sesion_id": 10,
+  "catalogo_id": 5,
+  "producto_id": 2,
+  "version_num": 3,
+  "estado": "BORRADOR",
+  "is_current": false,
+  "is_final": false,
+  "precio_exw": 1.10,
+  "porc_desc": 0.07,
+  "subtotal_exw": 880.0,
+  "created_at": "2024-02-05T10:00:00Z"
+}
 ```
 
-### 6.4 Marcar vigente
-```bash
-curl -X POST {{base}}/api/versiones/42/current \
-     -H "Authorization: Bearer {{token}}"
+### 6.3 Cambios de estado
+
+Ejemplo de enviar versión:
+
+`POST /api/versiones/41/enviar`
+
+Respuesta 200:
+
+```json
+{
+  "id": 41,
+  "estado": "ENVIADA",
+  "is_current": false,
+  "is_final": false,
+  "created_at": "2024-02-05T10:00:00Z"
+  /* …resto sin cambios */
+}
 ```
 
-*Reglas importantes*
-- Solo puede haber **una** `is_current=true` por sesión y **una** `is_final=true` por catálogo.  
-- Aprobar (`/aprobar`) asigna `is_final=true`, copia el id a `catalogo.final_version_id` y cambia el estado del catálogo a `CERRADA`.  
-- Cancelar catálogo no es posible si ya existe una versión final.
+Contraoferta, rechazar y aprobar devuelven el mismo objeto con `estado` actualizado y, en caso de aprobar, `is_final=true`.
+
+### 6.4 Editar versión
+
+`PATCH /api/versiones/{id}`
+
+Request (solo BORRADOR/ENVIADA/CONTRAOFERTA):
+
+```json
+{
+  "porc_desc": 0.05,
+  "cant_bultos": 80
+}
+```
+
+Respuesta 200: objeto versión actualizado.
+
+### 6.5 Marcar vigente dentro de la sesión
+
+`POST /api/versiones/{id}/current`
+
+Respuesta 200: versión marcada `is_current=true`; todas las demás de la sesión pasan a `is_current=false`.
 
 ---
 ## 7. Variables de entorno útiles
