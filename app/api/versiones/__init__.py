@@ -51,7 +51,7 @@ def _get_version_or_404(version_id: int) -> CatalogoSesionVersion:
         abort(404, description="versión no existe")
     return v
 
-@versiones_bp.post("/<int:version_id>/current")
+@versiones_bp.route("/<int:version_id>/current", methods=["POST", "OPTIONS"])
 @require_auth
 def forzar_current(version_id: int):
     v = _get_version_or_404(version_id)
@@ -128,7 +128,7 @@ def listar_versiones(sesion_id: int):
         "per_page": per_page
     })
 
-@versiones_bp.post("/sesiones/<int:sesion_id>/versiones")
+@versiones_bp.route("/sesiones/<int:sesion_id>/versiones", methods=["POST", "OPTIONS"])
 @require_auth
 def crear_version(sesion_id: int):
     s = db.session.get(CatalogoSesion, sesion_id)
@@ -231,7 +231,7 @@ def _set_estado(v: CatalogoSesionVersion, nuevo: str):
     db.session.commit()
     return jsonify(_version_to_json(v))
 
-@versiones_bp.post("/<int:version_id>/enviar")
+@versiones_bp.route("/<int:version_id>/enviar", methods=["POST", "OPTIONS"])
 @require_auth
 def enviar_version(version_id: int):
     v = _get_version_or_404(version_id)
@@ -239,7 +239,7 @@ def enviar_version(version_id: int):
         return jsonify({"error": "solo BORRADOR puede ENVIARSE"}), 409
     return _set_estado(v, "ENVIADA")
 
-@versiones_bp.post("/<int:version_id>/contraoferta")
+@versiones_bp.route("/<int:version_id>/contraoferta", methods=["POST", "OPTIONS"])
 @require_auth
 def contraoferta_version(version_id: int):
     v = _get_version_or_404(version_id)
@@ -247,7 +247,7 @@ def contraoferta_version(version_id: int):
         return jsonify({"error": "solo ENVIADA puede pasar a CONTRAOFERTA"}), 409
     return _set_estado(v, "CONTRAOFERTA")
 
-@versiones_bp.post("/<int:version_id>/rechazar")
+@versiones_bp.route("/<int:version_id>/rechazar", methods=["POST", "OPTIONS"])
 @require_auth
 def rechazar_version(version_id: int):
     v = _get_version_or_404(version_id)
@@ -255,7 +255,7 @@ def rechazar_version(version_id: int):
         return jsonify({"error": "solo ENVIADA/CONTRAOFERTA puede RECHAZARSE"}), 409
     return _set_estado(v, "RECHAZADA")
 
-@versiones_bp.post("/<int:version_id>/aprobar")
+@versiones_bp.route("/<int:version_id>/aprobar", methods=["POST", "OPTIONS"])
 @require_auth
 def aprobar_version(version_id: int):
     base_v = _get_version_or_404(version_id)
