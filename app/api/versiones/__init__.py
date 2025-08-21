@@ -87,6 +87,47 @@ def forzar_current(version_id: int):
         db.session.rollback()
         return jsonify({"error": "no se pudo marcar current (conflicto de concurrencia)"}), 409
 
+def _paginated(q):
+    try:
+        page = int(request.args.get("page", 1))
+        per_page = int(request.args.get("per_page", 20))
+    except ValueError:
+        abort(400, description="page/per_page inválidos")
+    per_page = max(1, min(per_page, 100))
+    items = q.limit(per_page).offset((page-1)*per_page).all()
+    return items, page, per_page
+
+# ---------------------------
+# GET /api/sesiones/{sesion_id}/versiones
+# ---------------------------
+@versiones_bp.get("/sesiones/<int:sesion_id>/versiones")
+@require_auth
+def listar_versiones(sesion_id: int):
+    s = db.session.get(CatalogoSesion, sesion_id)
+    if not s:
+        abort(404, description="sesión no existe")
+
+    q = CatalogoSesionVersion.query.filter(CatalogoSesionVersion.sesion_id == s.id)
+
+    # Filtros opcionales
+    estado = request.args.get("estado")
+    if estado:
+        q = q.filter(CatalogoSesionVersion.estado == estado)
+
+    is_current = request.args.get("is_current")
+    if is_current is not None:
+        flag = is_current.lower() in ("1","true","yes","y")
+        q = q.filter(CatalogoSesionVersion.is_current == flag)
+
+    q = q.order_by(CatalogoSesionVersion.version_num.desc())
+    items, page, per_page = _paginated(q)
+
+    return jsonify({
+        "data": [_version_to_json(v) for v in items],
+        "page": page,
+        "per_page": per_page
+    })
+
 @versiones_bp.post("/sesiones/<int:sesion_id>")
 @require_auth
 def crear_version(sesion_id: int):
