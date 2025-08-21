@@ -128,7 +128,7 @@ def listar_versiones(sesion_id: int):
         "per_page": per_page
     })
 
-@versiones_bp.post("/sesiones/<int:sesion_id>")
+@versiones_bp.post("/sesiones/<int:sesion_id>/versiones")
 @require_auth
 def crear_version(sesion_id: int):
     s = db.session.get(CatalogoSesion, sesion_id)
