@@ -59,7 +59,7 @@ def forzar_current(version_id: int):
         return jsonify({"error": "no se puede marcar current una versión final"}), 409
 
     try:
-        with db.session.begin():
+        with db.session.begin_nested():
             # Lock de la sesión para serializar el cambio de current
             s_locked = db.session.execute(
                 sa.select(CatalogoSesion)
@@ -136,7 +136,7 @@ def crear_version(sesion_id: int):
         abort(404, description="sesión no existe")
 
     try:
-        with db.session.begin():
+        with db.session.begin_nested():
             c = db.session.execute(
                 sa.select(Catalogo)
                 .where(Catalogo.id == s.catalogo_id)
@@ -258,7 +258,7 @@ def rechazar_version(version_id: int):
 def aprobar_version(version_id: int):
     base_v = _get_version_or_404(version_id)
     try:
-        with db.session.begin():
+        with db.session.begin_nested():
             c = db.session.execute(
                 sa.select(Catalogo)
                 .where(Catalogo.id == base_v.catalogo_id)
