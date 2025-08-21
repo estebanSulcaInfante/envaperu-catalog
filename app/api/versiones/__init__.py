@@ -189,6 +189,8 @@ def crear_version(sesion_id: int):
 
             db.session.add(v)
 
+        # fuera del savepoint, commit principal para persistir cambios
+        db.session.commit()
         return jsonify(_version_to_json(v)), 201
 
     except IntegrityError:
